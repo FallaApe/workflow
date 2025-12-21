@@ -1,12 +1,12 @@
-name: Auto Commit Every 4 Hours
+name: Random Auto Commit
 
 on:
   schedule:
-    - cron: "0 */4 * * *"
+    - cron: "0 * * * *"  # runs every hour
   workflow_dispatch:
 
 jobs:
-  auto-commit:
+  random-commit:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,16 +16,55 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: Make random change
-        run: echo "Commit at $(date) - $RANDOM" >> commits-log.txt
-
-      - name: Commit & push changes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up commit count
         run: |
-          git config --global user.name "FallaApe"
-          git config --global user.email "godshivam12007@gmail.com"
-          git add commits-log.txt
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "Auto commit $(date)"
-          git push origin main
+          # Initialize commit-count.txt if missing
+          if [ ! -f commit-count.txt ]; then
+            echo "0" > commit-count.txt
+          fi
+
+          # Get current date and last commit date
+          TODAY=$(date +%Y-%m-%d)
+          LAST_DATE=$(head -n1 commit-count.txt | cut -d',' -f1)
+          COUNT=$(head -n1 commit-count.txt | cut -d',' -f2)
+
+          # Reset count if it's a new day
+          if [ "$TODAY" != "$LAST_DATE" ]; then
+            echo "$TODAY,0" > commit-count.txt
+            COUNT=0
+          fi
+
+          echo "Today: $TODAY, Current Count: $COUNT"
+
+      - name: Randomly decide to commit
+        run: |
+          COUNT=$(head -n1 commit-count.txt | cut -d',' -f2)
+          if [ "$COUNT" -ge 6 ]; then
+            echo "Max 6 commits reached for today, skipping."
+            exit 0
+          fi
+
+          # Random decision: 1/2 chance to commit
+          RANDOM_CHOICE=$((RANDOM % 2))
+          if [ "$RANDOM_CHOICE" -eq 0 ] && [ "$COUNT" -lt 6 ]; then
+            echo "Making a commit..."
+            echo "Commit at $(date) - $RANDOM" >> commits-log.txt
+
+            git config --global user.name "FallaApe"
+            git config --global user.email "godshivam12007@gmail.com"
+            git add commits-log.txt
+
+            git diff --cached --quiet && echo "No changes to commit" && exit 0
+            git commit -m "Auto commit $(date)"
+            git push origin main
+
+            # Update commit-count
+            NEW_COUNT=$((COUNT + 1))
+            TODAY=$(date +%Y-%m-%d)
+            echo "$TODAY,$NEW_COUNT" > commit-count.txt
+            git add commit-count.txt
+            git commit -m "Update commit count $NEW_COUNT"
+            git push origin main
+          else
+            echo "Skipping commit this run"
+          fi
